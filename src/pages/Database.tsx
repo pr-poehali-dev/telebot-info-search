@@ -3,8 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import Icon from '@/components/ui/icon';
 import { useToast } from '@/hooks/use-toast';
 import { api, PhoneRecord } from '@/lib/api';
@@ -15,6 +18,13 @@ const Database = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [records, setRecords] = useState<PhoneRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [newRecord, setNewRecord] = useState({
+    phone: '',
+    name: '',
+    info: '',
+  });
 
   useEffect(() => {
     loadRecords();
@@ -53,6 +63,58 @@ const Database = () => {
 
   const activeRecords = records.filter(r => r.status === 'active').length;
   const inactiveRecords = records.filter(r => r.status === 'inactive').length;
+
+  const handleAddRecord = async () => {
+    if (!newRecord.phone.trim() || !newRecord.name.trim()) {
+      toast({
+        title: 'Ошибка',
+        description: 'Заполните обязательные поля',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      await api.addPhoneRecord(newRecord.phone, newRecord.name, newRecord.info);
+      toast({
+        title: 'Запись добавлена',
+        description: `${newRecord.name} успешно добавлен в базу`,
+      });
+      setNewRecord({ phone: '', name: '', info: '' });
+      setIsAddDialogOpen(false);
+      loadRecords(searchQuery);
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось добавить запись',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const exportToCSV = () => {
+    const headers = ['ID', 'Телефон', 'Имя', 'Информация', 'Статус', 'Дата'];
+    const csvContent = [
+      headers.join(','),
+      ...records.map(r => 
+        [r.id, r.phone, r.name, `"${r.info}"`, r.status, r.created_at].join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `phone_records_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+
+    toast({
+      title: 'Экспорт завершён',
+      description: `Экспортировано ${records.length} записей`,
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-secondary/5 to-accent/5">
@@ -118,6 +180,93 @@ const Database = () => {
               </div>
             </div>
             <div className="flex gap-3 w-full md:w-auto">
+              <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2 bg-gradient-to-r from-primary to-secondary">
+                    <Icon name="Plus" size={18} />
+                    Добавить запись
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px]">
+                  <DialogHeader>
+                    <DialogTitle className="text-2xl flex items-center gap-2">
+                      <Icon name="UserPlus" size={24} className="text-primary" />
+                      Новая запись
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="phone" className="text-sm font-medium">
+                        Телефон <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="phone"
+                        placeholder="+7 (999) 123-45-67"
+                        value={newRecord.phone}
+                        onChange={(e) => setNewRecord({ ...newRecord, phone: e.target.value })}
+                        className="h-11 border-2"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="name" className="text-sm font-medium">
+                        Имя <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="name"
+                        placeholder="Иван Иванов"
+                        value={newRecord.name}
+                        onChange={(e) => setNewRecord({ ...newRecord, name: e.target.value })}
+                        className="h-11 border-2"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="info" className="text-sm font-medium">
+                        Дополнительная информация
+                      </Label>
+                      <Textarea
+                        id="info"
+                        placeholder="Адрес, соц сети, email и другая информация..."
+                        value={newRecord.info}
+                        onChange={(e) => setNewRecord({ ...newRecord, info: e.target.value })}
+                        className="min-h-[100px] border-2"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Укажите адрес, ссылки на соц сети, email и любую другую информацию
+                      </p>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsAddDialogOpen(false)}
+                      disabled={isSaving}
+                    >
+                      Отмена
+                    </Button>
+                    <Button
+                      onClick={handleAddRecord}
+                      disabled={isSaving}
+                      className="bg-gradient-to-r from-primary to-secondary"
+                    >
+                      {isSaving ? (
+                        <>
+                          <Icon name="Loader2" size={18} className="animate-spin mr-2" />
+                          Сохранение...
+                        </>
+                      ) : (
+                        <>
+                          <Icon name="Save" size={18} className="mr-2" />
+                          Сохранить
+                        </>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              <Button variant="outline" className="gap-2" onClick={exportToCSV}>
+                <Icon name="Download" size={18} />
+                Экспорт CSV
+              </Button>
               <Button variant="outline" className="gap-2" onClick={() => loadRecords()}>
                 <Icon name="RefreshCw" size={18} />
                 Обновить
