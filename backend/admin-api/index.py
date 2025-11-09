@@ -31,7 +31,7 @@ def get_phone_records(search: str = '') -> List[Dict[str, Any]]:
             if search:
                 cur.execute(
                     """
-                    SELECT id, phone, name, info, status, 
+                    SELECT id, phone, name, info, additional_info, status, 
                            TO_CHAR(created_at, 'DD.MM.YYYY') as created_at
                     FROM phone_records 
                     WHERE phone LIKE %s OR name ILIKE %s
@@ -42,7 +42,7 @@ def get_phone_records(search: str = '') -> List[Dict[str, Any]]:
             else:
                 cur.execute(
                     """
-                    SELECT id, phone, name, info, status,
+                    SELECT id, phone, name, info, additional_info, status,
                            TO_CHAR(created_at, 'DD.MM.YYYY') as created_at
                     FROM phone_records 
                     ORDER BY id DESC
@@ -113,17 +113,18 @@ def get_statistics() -> Dict[str, Any]:
     finally:
         conn.close()
 
-def add_phone_record(phone: str, name: str, info: str) -> Dict[str, Any]:
+def add_phone_record(phone: str, name: str, info: str, additional_info: List[Dict[str, str]] = None) -> Dict[str, Any]:
     conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            additional_info_json = json.dumps(additional_info) if additional_info else '[]'
             cur.execute(
                 """
-                INSERT INTO phone_records (phone, name, info, status)
-                VALUES (%s, %s, %s, 'active')
-                RETURNING id, phone, name, info, status
+                INSERT INTO phone_records (phone, name, info, additional_info, status)
+                VALUES (%s, %s, %s, %s::jsonb, 'active')
+                RETURNING id, phone, name, info, additional_info, status
                 """,
-                (phone, name, info)
+                (phone, name, info, additional_info_json)
             )
             result = cur.fetchone()
             conn.commit()
@@ -131,18 +132,19 @@ def add_phone_record(phone: str, name: str, info: str) -> Dict[str, Any]:
     finally:
         conn.close()
 
-def update_phone_record(record_id: int, phone: str, name: str, info: str, status: str) -> Dict[str, Any]:
+def update_phone_record(record_id: int, phone: str, name: str, info: str, status: str, additional_info: List[Dict[str, str]] = None) -> Dict[str, Any]:
     conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            additional_info_json = json.dumps(additional_info) if additional_info else '[]'
             cur.execute(
                 """
                 UPDATE phone_records 
-                SET phone = %s, name = %s, info = %s, status = %s, updated_at = CURRENT_TIMESTAMP
+                SET phone = %s, name = %s, info = %s, additional_info = %s::jsonb, status = %s, updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
-                RETURNING id, phone, name, info, status
+                RETURNING id, phone, name, info, additional_info, status
                 """,
-                (phone, name, info, status, record_id)
+                (phone, name, info, additional_info_json, status, record_id)
             )
             result = cur.fetchone()
             conn.commit()
@@ -222,7 +224,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 record = add_phone_record(
                     body_data['phone'],
                     body_data['name'],
-                    body_data['info']
+                    body_data.get('info', ''),
+                    body_data.get('additional_info', [])
                 )
                 return {
                     'statusCode': 201,
@@ -245,8 +248,9 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     body_data['id'],
                     body_data['phone'],
                     body_data['name'],
-                    body_data['info'],
-                    body_data['status']
+                    body_data.get('info', ''),
+                    body_data['status'],
+                    body_data.get('additional_info', [])
                 )
                 return {
                     'statusCode': 200,
@@ -270,6 +274,30 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'statusCode': 400,
                     'headers': cors_headers(),
                     'body': json.dumps({'error': 'Invalid path parameter'})
+                }
+        
+        elif method == 'DELETE':
+            query_params = event.get('queryStringParameters', {})
+            record_id = query_params.get('id')
+            
+            if path == 'phone-records' and record_id:
+                conn = get_db_connection()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute('UPDATE phone_records SET status = %s WHERE id = %s', ('inactive', int(record_id)))
+                        conn.commit()
+                    return {
+                        'statusCode': 200,
+                        'headers': cors_headers(),
+                        'body': json.dumps({'success': True, 'id': record_id})
+                    }
+                finally:
+                    conn.close()
+            else:
+                return {
+                    'statusCode': 400,
+                    'headers': cors_headers(),
+                    'body': json.dumps({'error': 'Invalid path or missing id'})
                 }
         
         else:

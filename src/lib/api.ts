@@ -7,11 +7,17 @@ export interface Statistics {
   activeToday: number;
 }
 
+export interface AdditionalInfo {
+  label: string;
+  value: string;
+}
+
 export interface PhoneRecord {
   id: number;
   phone: string;
   name: string;
   info: string;
+  additional_info: AdditionalInfo[];
   status: string;
   created_at: string;
 }
@@ -53,24 +59,32 @@ export const api = {
     return response.json();
   },
 
-  async addPhoneRecord(phone: string, name: string, info: string): Promise<PhoneRecord> {
+  async addPhoneRecord(phone: string, name: string, info: string, additional_info: AdditionalInfo[] = []): Promise<PhoneRecord> {
     const response = await fetch(`${API_BASE_URL}?path=phone-records`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, name, info })
+      body: JSON.stringify({ phone, name, info, additional_info })
     });
     if (!response.ok) throw new Error('Failed to add phone record');
     return response.json();
   },
 
-  async updatePhoneRecord(id: number, phone: string, name: string, info: string, status: string): Promise<PhoneRecord> {
+  async updatePhoneRecord(id: number, phone: string, name: string, info: string, status: string, additional_info: AdditionalInfo[] = []): Promise<PhoneRecord> {
     const response = await fetch(`${API_BASE_URL}?path=phone-records`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, phone, name, info, status })
+      body: JSON.stringify({ id, phone, name, info, status, additional_info })
     });
     if (!response.ok) throw new Error('Failed to update phone record');
     return response.json();
+  },
+
+  async deletePhoneRecord(id: number): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}?path=phone-records&id=${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) throw new Error('Failed to delete phone record');
   },
 
   async updateUserStatus(id: number, status: string): Promise<BotUser> {

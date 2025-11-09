@@ -4,13 +4,13 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import Icon from '@/components/ui/icon';
 import { useToast } from '@/hooks/use-toast';
-import { api, PhoneRecord } from '@/lib/api';
+import { api, PhoneRecord, AdditionalInfo } from '@/lib/api';
 
 const Database = () => {
   const navigate = useNavigate();
@@ -19,11 +19,15 @@ const Database = () => {
   const [records, setRecords] = useState<PhoneRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [newRecord, setNewRecord] = useState({
+  const [selectedRecord, setSelectedRecord] = useState<PhoneRecord | null>(null);
+  
+  const [formData, setFormData] = useState({
     phone: '',
     name: '',
-    info: '',
+    additionalInfo: [{ label: '', value: '' }] as AdditionalInfo[],
   });
 
   useEffect(() => {
@@ -46,26 +50,41 @@ const Database = () => {
     }
   };
 
-  const handleSearch = () => {
-    loadRecords(searchQuery);
-  };
-
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (searchQuery) {
-        loadRecords(searchQuery);
-      } else {
-        loadRecords();
-      }
+      loadRecords(searchQuery);
     }, 500);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const activeRecords = records.filter(r => r.status === 'active').length;
-  const inactiveRecords = records.filter(r => r.status === 'inactive').length;
+  const resetForm = () => {
+    setFormData({
+      phone: '',
+      name: '',
+      additionalInfo: [{ label: '', value: '' }],
+    });
+  };
+
+  const handleAddField = () => {
+    setFormData({
+      ...formData,
+      additionalInfo: [...formData.additionalInfo, { label: '', value: '' }],
+    });
+  };
+
+  const handleRemoveField = (index: number) => {
+    const newFields = formData.additionalInfo.filter((_, i) => i !== index);
+    setFormData({ ...formData, additionalInfo: newFields });
+  };
+
+  const handleFieldChange = (index: number, field: 'label' | 'value', value: string) => {
+    const newFields = [...formData.additionalInfo];
+    newFields[index][field] = value;
+    setFormData({ ...formData, additionalInfo: newFields });
+  };
 
   const handleAddRecord = async () => {
-    if (!newRecord.phone.trim() || !newRecord.name.trim()) {
+    if (!formData.phone.trim() || !formData.name.trim()) {
       toast({
         title: 'Ошибка',
         description: 'Заполните обязательные поля',
@@ -76,12 +95,13 @@ const Database = () => {
 
     try {
       setIsSaving(true);
-      await api.addPhoneRecord(newRecord.phone, newRecord.name, newRecord.info);
+      const validFields = formData.additionalInfo.filter(f => f.label.trim() && f.value.trim());
+      await api.addPhoneRecord(formData.phone, formData.name, '', validFields);
       toast({
         title: 'Запись добавлена',
-        description: `${newRecord.name} успешно добавлен в базу`,
+        description: `${formData.name} успешно добавлен в базу`,
       });
-      setNewRecord({ phone: '', name: '', info: '' });
+      resetForm();
       setIsAddDialogOpen(false);
       loadRecords(searchQuery);
     } catch (error) {
@@ -95,13 +115,96 @@ const Database = () => {
     }
   };
 
+  const handleEditRecord = async () => {
+    if (!selectedRecord || !formData.phone.trim() || !formData.name.trim()) {
+      toast({
+        title: 'Ошибка',
+        description: 'Заполните обязательные поля',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      const validFields = formData.additionalInfo.filter(f => f.label.trim() && f.value.trim());
+      await api.updatePhoneRecord(
+        selectedRecord.id,
+        formData.phone,
+        formData.name,
+        '',
+        selectedRecord.status,
+        validFields
+      );
+      toast({
+        title: 'Запись обновлена',
+        description: 'Изменения успешно сохранены',
+      });
+      setIsEditDialogOpen(false);
+      setSelectedRecord(null);
+      loadRecords(searchQuery);
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось обновить запись',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteRecord = async () => {
+    if (!selectedRecord) return;
+
+    try {
+      setIsSaving(true);
+      await api.deletePhoneRecord(selectedRecord.id);
+      toast({
+        title: 'Запись удалена',
+        description: 'Запись успешно удалена из базы',
+      });
+      setIsDeleteDialogOpen(false);
+      setSelectedRecord(null);
+      loadRecords(searchQuery);
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось удалить запись',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openEditDialog = (record: PhoneRecord) => {
+    setSelectedRecord(record);
+    setFormData({
+      phone: record.phone,
+      name: record.name,
+      additionalInfo: record.additional_info?.length > 0 
+        ? record.additional_info 
+        : [{ label: '', value: '' }],
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const openDeleteDialog = (record: PhoneRecord) => {
+    setSelectedRecord(record);
+    setIsDeleteDialogOpen(true);
+  };
+
   const exportToCSV = () => {
-    const headers = ['ID', 'Телефон', 'Имя', 'Информация', 'Статус', 'Дата'];
+    const headers = ['ID', 'Телефон', 'Имя', 'Доп. информация', 'Статус', 'Дата'];
     const csvContent = [
       headers.join(','),
-      ...records.map(r => 
-        [r.id, r.phone, r.name, `"${r.info}"`, r.status, r.created_at].join(',')
-      )
+      ...records.map(r => {
+        const additionalInfoStr = r.additional_info
+          ?.map(info => `${info.label}: ${info.value}`)
+          .join('; ') || '';
+        return [r.id, r.phone, r.name, `"${additionalInfoStr}"`, r.status, r.created_at].join(',');
+      })
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -115,6 +218,9 @@ const Database = () => {
       description: `Экспортировано ${records.length} записей`,
     });
   };
+
+  const activeRecords = records.filter(r => r.status === 'active').length;
+  const inactiveRecords = records.filter(r => r.status === 'inactive').length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-secondary/5 to-accent/5">
@@ -179,66 +285,96 @@ const Database = () => {
                 />
               </div>
             </div>
-            <div className="flex gap-3 w-full md:w-auto">
-              <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <div className="flex gap-3 w-full md:w-auto flex-wrap">
+              <Dialog open={isAddDialogOpen} onOpenChange={(open) => { setIsAddDialogOpen(open); if (!open) resetForm(); }}>
                 <DialogTrigger asChild>
                   <Button className="gap-2 bg-gradient-to-r from-primary to-secondary">
                     <Icon name="Plus" size={18} />
-                    Добавить запись
+                    Добавить
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px]">
+                <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="text-2xl flex items-center gap-2">
                       <Icon name="UserPlus" size={24} className="text-primary" />
                       Новая запись
                     </DialogTitle>
+                    <DialogDescription>
+                      Добавьте новый контакт в базу данных
+                    </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
-                      <Label htmlFor="phone" className="text-sm font-medium">
+                      <Label htmlFor="phone">
                         Телефон <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         id="phone"
                         placeholder="+7 (999) 123-45-67"
-                        value={newRecord.phone}
-                        onChange={(e) => setNewRecord({ ...newRecord, phone: e.target.value })}
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                         className="h-11 border-2"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="name" className="text-sm font-medium">
+                      <Label htmlFor="name">
                         Имя <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         id="name"
                         placeholder="Иван Иванов"
-                        value={newRecord.name}
-                        onChange={(e) => setNewRecord({ ...newRecord, name: e.target.value })}
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         className="h-11 border-2"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="info" className="text-sm font-medium">
-                        Дополнительная информация
-                      </Label>
-                      <Textarea
-                        id="info"
-                        placeholder="Адрес, соц сети, email и другая информация..."
-                        value={newRecord.info}
-                        onChange={(e) => setNewRecord({ ...newRecord, info: e.target.value })}
-                        className="min-h-[100px] border-2"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Укажите адрес, ссылки на соц сети, email и любую другую информацию
-                      </p>
+                    
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label>Дополнительная информация</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleAddField}
+                          className="gap-2"
+                        >
+                          <Icon name="Plus" size={16} />
+                          Добавить поле
+                        </Button>
+                      </div>
+                      {formData.additionalInfo.map((field, index) => (
+                        <div key={index} className="flex gap-2">
+                          <Input
+                            placeholder="Название (Адрес, VK, Email...)"
+                            value={field.label}
+                            onChange={(e) => handleFieldChange(index, 'label', e.target.value)}
+                            className="h-10 border-2"
+                          />
+                          <Input
+                            placeholder="Значение"
+                            value={field.value}
+                            onChange={(e) => handleFieldChange(index, 'value', e.target.value)}
+                            className="h-10 border-2 flex-1"
+                          />
+                          {formData.additionalInfo.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveField(index)}
+                            >
+                              <Icon name="X" size={18} />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
                   <DialogFooter>
                     <Button
                       variant="outline"
-                      onClick={() => setIsAddDialogOpen(false)}
+                      onClick={() => { setIsAddDialogOpen(false); resetForm(); }}
                       disabled={isSaving}
                     >
                       Отмена
@@ -263,6 +399,7 @@ const Database = () => {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+              
               <Button variant="outline" className="gap-2" onClick={exportToCSV}>
                 <Icon name="Download" size={18} />
                 Экспорт CSV
@@ -297,9 +434,10 @@ const Database = () => {
                   <TableHead className="font-bold">ID</TableHead>
                   <TableHead className="font-bold">Телефон</TableHead>
                   <TableHead className="font-bold">Имя</TableHead>
-                  <TableHead className="font-bold">Информация</TableHead>
+                  <TableHead className="font-bold">Доп. информация</TableHead>
                   <TableHead className="font-bold">Статус</TableHead>
                   <TableHead className="font-bold">Дата</TableHead>
+                  <TableHead className="font-bold text-right">Действия</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -313,7 +451,20 @@ const Database = () => {
                       </div>
                     </TableCell>
                     <TableCell className="font-medium">{record.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{record.info}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {record.additional_info && record.additional_info.length > 0 ? (
+                        <div className="space-y-1">
+                          {record.additional_info.map((info, idx) => (
+                            <div key={idx} className="flex gap-2">
+                              <span className="font-medium">{info.label}:</span>
+                              <span>{info.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge
                         variant={record.status === 'active' ? 'default' : 'secondary'}
@@ -323,6 +474,26 @@ const Database = () => {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">{record.created_at}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => openEditDialog(record)}
+                        >
+                          <Icon name="Edit" size={16} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => openDeleteDialog(record)}
+                        >
+                          <Icon name="Trash2" size={16} />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -330,6 +501,146 @@ const Database = () => {
           </Card>
         )}
       </main>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center gap-2">
+              <Icon name="Edit" size={24} className="text-primary" />
+              Редактирование записи
+            </DialogTitle>
+            <DialogDescription>
+              Измените данные контакта
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-phone">
+                Телефон <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="edit-phone"
+                placeholder="+7 (999) 123-45-67"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                className="h-11 border-2"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">
+                Имя <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="edit-name"
+                placeholder="Иван Иванов"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="h-11 border-2"
+              />
+            </div>
+            
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Дополнительная информация</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddField}
+                  className="gap-2"
+                >
+                  <Icon name="Plus" size={16} />
+                  Добавить поле
+                </Button>
+              </div>
+              {formData.additionalInfo.map((field, index) => (
+                <div key={index} className="flex gap-2">
+                  <Input
+                    placeholder="Название"
+                    value={field.label}
+                    onChange={(e) => handleFieldChange(index, 'label', e.target.value)}
+                    className="h-10 border-2"
+                  />
+                  <Input
+                    placeholder="Значение"
+                    value={field.value}
+                    onChange={(e) => handleFieldChange(index, 'value', e.target.value)}
+                    className="h-10 border-2 flex-1"
+                  />
+                  {formData.additionalInfo.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemoveField(index)}
+                    >
+                      <Icon name="X" size={18} />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
+              disabled={isSaving}
+            >
+              Отмена
+            </Button>
+            <Button
+              onClick={handleEditRecord}
+              disabled={isSaving}
+              className="bg-gradient-to-r from-primary to-secondary"
+            >
+              {isSaving ? (
+                <>
+                  <Icon name="Loader2" size={18} className="animate-spin mr-2" />
+                  Сохранение...
+                </>
+              ) : (
+                <>
+                  <Icon name="Save" size={18} className="mr-2" />
+                  Сохранить
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Icon name="AlertTriangle" size={24} className="text-destructive" />
+              Удаление записи
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы уверены, что хотите удалить запись <strong>{selectedRecord?.name}</strong>?
+              Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteRecord}
+              disabled={isSaving}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {isSaving ? (
+                <>
+                  <Icon name="Loader2" size={18} className="animate-spin mr-2" />
+                  Удаление...
+                </>
+              ) : (
+                'Удалить'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
