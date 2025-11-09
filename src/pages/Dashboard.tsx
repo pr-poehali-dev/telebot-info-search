@@ -1,17 +1,41 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Icon from '@/components/ui/icon';
+import { api, Statistics } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [stats] = useState({
-    totalUsers: 1247,
-    totalSearches: 8934,
-    databaseRecords: 45632,
-    activeToday: 89,
+  const { toast } = useToast();
+  const [stats, setStats] = useState<Statistics>({
+    totalUsers: 0,
+    totalSearches: 0,
+    databaseRecords: 0,
+    activeToday: 0,
   });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    loadStatistics();
+  }, []);
+
+  const loadStatistics = async () => {
+    try {
+      setIsLoading(true);
+      const data = await api.getStatistics();
+      setStats(data);
+    } catch (error) {
+      toast({
+        title: 'Ошибка загрузки',
+        description: 'Не удалось загрузить статистику',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('isAuthenticated');
@@ -21,6 +45,7 @@ const Dashboard = () => {
   const quickActions = [
     { icon: 'Database', label: 'База данных', path: '/database', color: 'from-primary to-secondary' },
     { icon: 'Users', label: 'Пользователи', path: '/users', color: 'from-secondary to-accent' },
+    { icon: 'Settings', label: 'Настройки бота', path: '/settings', color: 'from-accent to-primary' },
   ];
 
   return (
@@ -36,10 +61,16 @@ const Dashboard = () => {
               <p className="text-xs text-muted-foreground">Панель управления</p>
             </div>
           </div>
-          <Button onClick={handleLogout} variant="outline" className="gap-2">
-            <Icon name="LogOut" size={18} />
-            Выйти
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => navigate('/settings')} variant="outline" className="gap-2">
+              <Icon name="Settings" size={18} />
+              Настройки
+            </Button>
+            <Button onClick={handleLogout} variant="outline" className="gap-2">
+              <Icon name="LogOut" size={18} />
+              Выйти
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -50,12 +81,21 @@ const Dashboard = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {[
-            { icon: 'Users', label: 'Всего пользователей', value: stats.totalUsers, color: 'bg-gradient-to-br from-primary to-secondary', trend: '+12%' },
-            { icon: 'Search', label: 'Поисковых запросов', value: stats.totalSearches, color: 'bg-gradient-to-br from-secondary to-accent', trend: '+8%' },
-            { icon: 'Database', label: 'Записей в базе', value: stats.databaseRecords, color: 'bg-gradient-to-br from-accent to-primary', trend: '+156' },
-            { icon: 'Activity', label: 'Активных сегодня', value: stats.activeToday, color: 'bg-gradient-to-br from-primary/80 to-secondary/80', trend: '89' },
-          ].map((stat, index) => (
+          {isLoading ? (
+            Array(4).fill(0).map((_, index) => (
+              <Card key={index} className="p-6 border-2 animate-pulse">
+                <div className="h-12 w-12 bg-muted rounded-xl mb-4"></div>
+                <div className="h-4 bg-muted rounded mb-2 w-3/4"></div>
+                <div className="h-8 bg-muted rounded w-1/2"></div>
+              </Card>
+            ))
+          ) : (
+            [
+              { icon: 'Users', label: 'Всего пользователей', value: stats.totalUsers, color: 'bg-gradient-to-br from-primary to-secondary' },
+              { icon: 'Search', label: 'Поисковых запросов', value: stats.totalSearches, color: 'bg-gradient-to-br from-secondary to-accent' },
+              { icon: 'Database', label: 'Записей в базе', value: stats.databaseRecords, color: 'bg-gradient-to-br from-accent to-primary' },
+              { icon: 'Activity', label: 'Активных сегодня', value: stats.activeToday, color: 'bg-gradient-to-br from-primary/80 to-secondary/80' },
+            ].map((stat, index) => (
             <Card
               key={index}
               className="p-6 border-2 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 animate-fade-in cursor-pointer"
@@ -65,19 +105,17 @@ const Dashboard = () => {
                 <div className={`w-12 h-12 rounded-xl ${stat.color} flex items-center justify-center shadow-lg`}>
                   <Icon name={stat.icon as any} size={24} className="text-white" />
                 </div>
-                <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded-full">
-                  {stat.trend}
-                </span>
               </div>
               <p className="text-sm text-muted-foreground mb-1">{stat.label}</p>
               <p className="text-3xl font-bold">{stat.value.toLocaleString()}</p>
             </Card>
-          ))}
+          ))
+          )}
         </div>
 
         <div className="mb-8">
           <h3 className="text-xl font-bold mb-4">Быстрые действия</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {quickActions.map((action, index) => (
               <Card
                 key={index}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,40 +7,52 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import Icon from '@/components/ui/icon';
 import { useToast } from '@/hooks/use-toast';
+import { api, PhoneRecord } from '@/lib/api';
 
 const Database = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
+  const [records, setRecords] = useState<PhoneRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [records] = useState([
-    { id: 1, phone: '+7 (999) 123-45-67', name: 'Иван Петров', info: 'Москва, ул. Ленина 1', status: 'active' },
-    { id: 2, phone: '+7 (999) 234-56-78', name: 'Мария Сидорова', info: 'СПб, Невский пр. 10', status: 'active' },
-    { id: 3, phone: '+7 (999) 345-67-89', name: 'Алексей Смирнов', info: 'Казань, пр. Победы 5', status: 'inactive' },
-    { id: 4, phone: '+7 (999) 456-78-90', name: 'Елена Волкова', info: 'Н.Новгород, ул. Горького 3', status: 'active' },
-    { id: 5, phone: '+7 (999) 567-89-01', name: 'Дмитрий Козлов', info: 'Екатеринбург, ул. Мира 7', status: 'active' },
-  ]);
+  useEffect(() => {
+    loadRecords();
+  }, []);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setIsUploading(true);
-      setTimeout(() => {
-        toast({
-          title: 'Файл загружен',
-          description: `Обработано записей: ${Math.floor(Math.random() * 1000) + 100}`,
-        });
-        setIsUploading(false);
-      }, 2000);
+  const loadRecords = async (search: string = '') => {
+    try {
+      setIsLoading(true);
+      const data = await api.getPhoneRecords(search);
+      setRecords(data);
+    } catch (error) {
+      toast({
+        title: 'Ошибка загрузки',
+        description: 'Не удалось загрузить записи',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const filteredRecords = records.filter(
-    (record) =>
-      record.phone.includes(searchQuery) ||
-      record.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleSearch = () => {
+    loadRecords(searchQuery);
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery) {
+        loadRecords(searchQuery);
+      } else {
+        loadRecords();
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const activeRecords = records.filter(r => r.status === 'active').length;
+  const inactiveRecords = records.filter(r => r.status === 'inactive').length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-secondary/5 to-accent/5">
@@ -78,7 +90,7 @@ const Database = () => {
           <Card className="p-6 border-2 bg-gradient-to-br from-secondary to-accent text-white">
             <div className="flex items-center justify-between mb-2">
               <Icon name="CheckCircle" size={32} />
-              <span className="text-2xl font-bold">{records.filter(r => r.status === 'active').length}</span>
+              <span className="text-2xl font-bold">{activeRecords}</span>
             </div>
             <p className="text-sm opacity-90">Активных</p>
           </Card>
@@ -86,7 +98,7 @@ const Database = () => {
           <Card className="p-6 border-2 bg-gradient-to-br from-accent to-primary text-white">
             <div className="flex items-center justify-between mb-2">
               <Icon name="Clock" size={32} />
-              <span className="text-2xl font-bold">{records.filter(r => r.status === 'inactive').length}</span>
+              <span className="text-2xl font-bold">{inactiveRecords}</span>
             </div>
             <p className="text-sm opacity-90">Неактивных</p>
           </Card>
@@ -106,88 +118,67 @@ const Database = () => {
               </div>
             </div>
             <div className="flex gap-3 w-full md:w-auto">
-              <label className="flex-1 md:flex-initial">
-                <input
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-                <Button
-                  type="button"
-                  className="w-full bg-gradient-to-r from-primary to-secondary hover:opacity-90 gap-2"
-                  disabled={isUploading}
-                  onClick={() => document.querySelector('input[type="file"]')?.dispatchEvent(new MouseEvent('click'))}
-                >
-                  {isUploading ? (
-                    <Icon name="Loader2" size={18} className="animate-spin" />
-                  ) : (
-                    <Icon name="Upload" size={18} />
-                  )}
-                  Загрузить базу
-                </Button>
-              </label>
-              <Button variant="outline" className="gap-2">
-                <Icon name="Download" size={18} />
-                Экспорт
+              <Button variant="outline" className="gap-2" onClick={() => loadRecords()}>
+                <Icon name="RefreshCw" size={18} />
+                Обновить
               </Button>
             </div>
           </div>
         </Card>
 
-        <Card className="border-2 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead className="font-bold">ID</TableHead>
-                <TableHead className="font-bold">Телефон</TableHead>
-                <TableHead className="font-bold">Имя</TableHead>
-                <TableHead className="font-bold">Информация</TableHead>
-                <TableHead className="font-bold">Статус</TableHead>
-                <TableHead className="font-bold text-right">Действия</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRecords.map((record) => (
-                <TableRow key={record.id} className="hover:bg-muted/30 transition-colors">
-                  <TableCell className="font-medium">#{record.id}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Icon name="Phone" size={16} className="text-primary" />
-                      <span className="font-mono">{record.phone}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-medium">{record.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{record.info}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={record.status === 'active' ? 'default' : 'secondary'}
-                      className={record.status === 'active' ? 'bg-green-500' : ''}
-                    >
-                      {record.status === 'active' ? 'Активен' : 'Неактивен'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex gap-2 justify-end">
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <Icon name="Edit" size={16} />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
-                        <Icon name="Trash2" size={16} />
-                      </Button>
-                    </div>
-                  </TableCell>
+        {isLoading ? (
+          <Card className="p-12 border-2">
+            <div className="flex flex-col items-center justify-center gap-4">
+              <Icon name="Loader2" size={48} className="animate-spin text-primary" />
+              <p className="text-muted-foreground">Загрузка данных...</p>
+            </div>
+          </Card>
+        ) : records.length === 0 ? (
+          <Card className="p-12 border-2">
+            <div className="text-center">
+              <Icon name="SearchX" size={48} className="mx-auto text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">Записи не найдены</p>
+            </div>
+          </Card>
+        ) : (
+          <Card className="border-2 overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="font-bold">ID</TableHead>
+                  <TableHead className="font-bold">Телефон</TableHead>
+                  <TableHead className="font-bold">Имя</TableHead>
+                  <TableHead className="font-bold">Информация</TableHead>
+                  <TableHead className="font-bold">Статус</TableHead>
+                  <TableHead className="font-bold">Дата</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-
-        {filteredRecords.length === 0 && (
-          <div className="text-center py-12">
-            <Icon name="SearchX" size={48} className="mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">Записи не найдены</p>
-          </div>
+              </TableHeader>
+              <TableBody>
+                {records.map((record) => (
+                  <TableRow key={record.id} className="hover:bg-muted/30 transition-colors">
+                    <TableCell className="font-medium">#{record.id}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Icon name="Phone" size={16} className="text-primary" />
+                        <span className="font-mono">{record.phone}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-medium">{record.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{record.info}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={record.status === 'active' ? 'default' : 'secondary'}
+                        className={record.status === 'active' ? 'bg-green-500' : ''}
+                      >
+                        {record.status === 'active' ? 'Активен' : 'Неактивен'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{record.created_at}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
         )}
       </main>
     </div>

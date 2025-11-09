@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,26 +7,46 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import Icon from '@/components/ui/icon';
+import { useToast } from '@/hooks/use-toast';
+import { api, BotUser } from '@/lib/api';
 
 const Users = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
+  const [users, setUsers] = useState<BotUser[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [users] = useState([
-    { id: 1, name: 'Александр К.', username: '@alex_k', searches: 45, joined: '15.10.2024', status: 'active', avatar: 'АК' },
-    { id: 2, name: 'Мария П.', username: '@maria_p', searches: 123, joined: '12.10.2024', status: 'active', avatar: 'МП' },
-    { id: 3, name: 'Дмитрий В.', username: '@dmitry_v', searches: 8, joined: '18.10.2024', status: 'blocked', avatar: 'ДВ' },
-    { id: 4, name: 'Елена С.', username: '@elena_s', searches: 67, joined: '10.10.2024', status: 'active', avatar: 'ЕС' },
-    { id: 5, name: 'Сергей М.', username: '@sergey_m', searches: 234, joined: '05.10.2024', status: 'active', avatar: 'СМ' },
-    { id: 6, name: 'Ольга Н.', username: '@olga_n', searches: 12, joined: '20.10.2024', status: 'active', avatar: 'ОН' },
-    { id: 7, name: 'Иван Р.', username: '@ivan_r', searches: 89, joined: '08.10.2024', status: 'inactive', avatar: 'ИР' },
-  ]);
+  useEffect(() => {
+    loadUsers();
+  }, []);
 
-  const filteredUsers = users.filter(
-    (user) =>
-      user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.username.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const loadUsers = async (search: string = '') => {
+    try {
+      setIsLoading(true);
+      const data = await api.getBotUsers(search);
+      setUsers(data);
+    } catch (error) {
+      toast({
+        title: 'Ошибка загрузки',
+        description: 'Не удалось загрузить пользователей',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery) {
+        loadUsers(searchQuery);
+      } else {
+        loadUsers();
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -53,6 +73,16 @@ const Users = () => {
         return status;
     }
   };
+
+  const getInitials = (firstName: string, lastName: string) => {
+    const first = firstName?.charAt(0) || '';
+    const last = lastName?.charAt(0) || '';
+    return (first + last).toUpperCase() || '?';
+  };
+
+  const activeUsers = users.filter(u => u.status === 'active').length;
+  const blockedUsers = users.filter(u => u.status === 'blocked').length;
+  const inactiveUsers = users.filter(u => u.status === 'inactive').length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-secondary/5 to-accent/5">
@@ -81,9 +111,9 @@ const Users = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           {[
             { icon: 'Users', label: 'Всего пользователей', value: users.length, color: 'from-primary to-secondary' },
-            { icon: 'UserCheck', label: 'Активных', value: users.filter(u => u.status === 'active').length, color: 'from-green-500 to-green-600' },
-            { icon: 'UserX', label: 'Заблокированных', value: users.filter(u => u.status === 'blocked').length, color: 'from-red-500 to-red-600' },
-            { icon: 'UserMinus', label: 'Неактивных', value: users.filter(u => u.status === 'inactive').length, color: 'from-gray-400 to-gray-500' },
+            { icon: 'UserCheck', label: 'Активных', value: activeUsers, color: 'from-green-500 to-green-600' },
+            { icon: 'UserX', label: 'Заблокированных', value: blockedUsers, color: 'from-red-500 to-red-600' },
+            { icon: 'UserMinus', label: 'Неактивных', value: inactiveUsers, color: 'from-gray-400 to-gray-500' },
           ].map((stat, index) => (
             <Card
               key={index}
@@ -112,80 +142,78 @@ const Users = () => {
               </div>
             </div>
             <div className="flex gap-3 w-full md:w-auto">
-              <Button variant="outline" className="gap-2">
-                <Icon name="Filter" size={18} />
-                Фильтры
-              </Button>
-              <Button variant="outline" className="gap-2">
-                <Icon name="Download" size={18} />
-                Экспорт
+              <Button variant="outline" className="gap-2" onClick={() => loadUsers()}>
+                <Icon name="RefreshCw" size={18} />
+                Обновить
               </Button>
             </div>
           </div>
         </Card>
 
-        <Card className="border-2 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead className="font-bold">Пользователь</TableHead>
-                <TableHead className="font-bold">Username</TableHead>
-                <TableHead className="font-bold">Поисков</TableHead>
-                <TableHead className="font-bold">Дата регистрации</TableHead>
-                <TableHead className="font-bold">Статус</TableHead>
-                <TableHead className="font-bold text-right">Действия</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredUsers.map((user) => (
-                <TableRow key={user.id} className="hover:bg-muted/30 transition-colors">
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-10 w-10 border-2 border-primary/20">
-                        <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-white font-semibold">
-                          {user.avatar}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="font-medium">{user.name}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground font-mono">{user.username}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Icon name="Search" size={14} className="text-primary" />
-                      <span className="font-semibold">{user.searches}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{user.joined}</TableCell>
-                  <TableCell>
-                    <Badge className={getStatusColor(user.status)}>
-                      {getStatusLabel(user.status)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex gap-2 justify-end">
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <Icon name="Eye" size={16} />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <Icon name="Edit" size={16} />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
-                        <Icon name="Ban" size={16} />
-                      </Button>
-                    </div>
-                  </TableCell>
+        {isLoading ? (
+          <Card className="p-12 border-2">
+            <div className="flex flex-col items-center justify-center gap-4">
+              <Icon name="Loader2" size={48} className="animate-spin text-primary" />
+              <p className="text-muted-foreground">Загрузка данных...</p>
+            </div>
+          </Card>
+        ) : users.length === 0 ? (
+          <Card className="p-12 border-2">
+            <div className="text-center">
+              <Icon name="UserX" size={48} className="mx-auto text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">Пользователи не найдены</p>
+            </div>
+          </Card>
+        ) : (
+          <Card className="border-2 overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="font-bold">Пользователь</TableHead>
+                  <TableHead className="font-bold">Username</TableHead>
+                  <TableHead className="font-bold">Поисков</TableHead>
+                  <TableHead className="font-bold">Дата регистрации</TableHead>
+                  <TableHead className="font-bold">Последняя активность</TableHead>
+                  <TableHead className="font-bold">Статус</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-
-        {filteredUsers.length === 0 && (
-          <div className="text-center py-12">
-            <Icon name="UserX" size={48} className="mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">Пользователи не найдены</p>
-          </div>
+              </TableHeader>
+              <TableBody>
+                {users.map((user) => (
+                  <TableRow key={user.id} className="hover:bg-muted/30 transition-colors">
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-10 w-10 border-2 border-primary/20">
+                          <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-white font-semibold">
+                            {getInitials(user.first_name, user.last_name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium">{user.first_name} {user.last_name}</p>
+                          <p className="text-xs text-muted-foreground">ID: {user.telegram_id}</p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground font-mono">
+                      {user.username ? `@${user.username}` : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Icon name="Search" size={14} className="text-primary" />
+                        <span className="font-semibold">{user.search_count}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{user.joined}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{user.last_active}</TableCell>
+                    <TableCell>
+                      <Badge className={getStatusColor(user.status)}>
+                        {getStatusLabel(user.status)}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
         )}
       </main>
     </div>
